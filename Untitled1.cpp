@@ -64,58 +64,7 @@ int main()
     avg_tat=(float)total/i;    
     printf("\n\nAverage Waiting Time=%f",avg_wt);
     printf("\nAverage Turnaround Time=%f\n",avg_tat);
- struct Process
-{
-   int pid1; 
-   int bt3; 
-};
-bool comparison(Process a, Process b)
-{
-     return (a.bt3 < b.bt3);
-}
-void findWaitingTime(Process proc[], int n, int wt3[])
-{
-    wt3[0] = 0;
-    for (int i = 1; i < n ; i++ )
-        wt3[i] = proc[i-1].bt3 + wt3[i-1] ;
-}
-void findTurnAroundTime(Process proc[], int n,
-                        int wt3[], int tat[])
-{
-    for (int i = 0; i < n ; i++)
-        tat[i] = proc[i].bt3 + wt3[i];
-}
-void findavgTime(Process proc[], int n)
-{
-    int wt3[n], tat[n], total_wt = 0, total_tat = 0;
-    findWaitingTime(proc, n, wt3);
-    findTurnAroundTime(proc, n, wt3, tat);
-    cout << "\nProcesses "<< " Burst time "
-         << " Waiting time " << " Turn around time\n";
-    for (int i = 0; i < n; i++)
-    {
-        total_wt = total_wt + wt3[i];
-        total_tat = total_tat + tat[i];
-        cout << " " << proc[i].pid1 << "\t\t"
-             << proc[i].bt3 << "\t " << wt3[i]
-             << "\t\t " << tat[i] <<endl;
-    }
- 
-    cout << "Average waiting time = "
-         << (float)total_wt / (float)n;
-    cout << "\nAverage turn around time = "
-         << (float)total_tat / (float)n;
-}
-int main()
-{
-    Process proc[] = {{1, 8}, {2, 4}, {3, 1}};
-    int n = sizeof proc / sizeof proc[0];
-    sort(proc, proc + n, comparison);
-    cout << "Order in which process gets executed\n";
-    for (int i = 0 ; i < n; i++)
-        cout << proc[i].pid1 <<" ";
-findavgTime(proc, n);
-    return 0;
-}
+
+retuen 0;
 }
  
