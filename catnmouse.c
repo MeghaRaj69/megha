@@ -1,232 +1,207 @@
-#include <sys/types.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+#include <time.h>
 #include <pthread.h>
-#if OPT_A1
-#include "kitchen.h"
-#endif 
-extern int initialize_bowls(unsigned int bowlcount);
-extern void cat_eat(unsigned int bowlnumber);
-extern void mouse_eat(unsigned int bowlnumber);
-extern void cat_sleep(void);
-extern void mouse_sleep(void);
-int NumBowls;
-int NumCats;   
-int NumMice;   
-int NumLoops;  
-struct semaphore *CatMouseWait;
-#if OPT_A1
-struct kitchen *k = NULL; 
-struct kitchen *kitchen_create() {
+#include<unistd.h>
+
+#define NumBowls 5
+#define NumCats  3
+#define NumMice  2
+#define CatWait  5      	// max time in seconds a cat sleeps
+#define CatEat   1       	//how long in seconds a cat is eating
+#define NumTimeCatEat 4     // how many times a cat wants to eat 
+#define MouseWait     3     //max time in seconds a mouse sleeps
+#define MouseEat      1     // how long in seconds a mouse is eating
+#define NumTimeMouseEat 4   // how many times a mouse wants to eat
+
+typedef struct Bowl {
+    int FreeBowls;
+    int CatsEating;
+    int MiceEating;            /* how many Mice are eating at the moment */
+    int CatsWaiting;           /* how many cats are waiting for Bowl */
+    enum {NoneEating,CatEating,MouseEating
+    } status[NumBowls];         /* status of each Bowl */
+    pthread_mutex_t mutex;      /* mutex for accessing Bowl */
+    pthread_cond_t FreeConditionVariable;     /* used to wait for a free Bowl */
+    pthread_cond_t CatConditionVariable;      /* used to wait for coming cats */
+} B;
+
+static const char *progname = "animals";
+
+static void DumpBowl(char *name, pthread_t animal, char *what, B *Bowl, int MyBowl)
+{
     int i;
-    struct kitchen *k = kmalloc(sizeof(struct kitchen));
-    if (k == NULL) {
-        return NULL;
-    }
-    k->bowl_locks = kmalloc(NumBowls * sizeof(struct lock *));
-    if (k->bowl_locks == NULL) {
-        kfree(k);
-        return NULL;
-    }
+    printf("[    ");
     for (i = 0; i < NumBowls; i++) {
-        k->bowl_locks[i] = lock_create("bowl");
-    }
-    k->kitchen_lock = lock_create("enter");
-    k->kitchen_cv = cv_create("kitchen");
-    k->group_list = q_create(1);
-    k->current_creature = 2;
-    k->creature_count = 0;
-    return k;
-}
-void enter_kitchen(const int creature_type) { 
-    else if (!q_empty(k->group_list)) {
-        int index = q_getend(k->group_list) > 0 ? q_getend(k->group_list)-1 : q_getsize(k->group_list) - 1;
-        struct kgroup *g = (struct kgroup *)q_getguy(k->group_list, index);
-        if (g->type == creature_type) {
-            g->amount++;
-        } else {
-            // Otherwise, start a new last group
-            g = kmalloc(sizeof(struct kgroup));
-            g->type = creature_type;
-            g->amount = 1;
-            q_addtail(k->group_list, g);
+        if (i) printf(":");
+        switch (Bowl->status[i]) {
+        case NoneEating:
+            printf("  -  ");
+            break;
+        case CatEating:
+            printf("  cat %d",i);
+            break;
+        case MouseEating:
+            printf("  mouse  %d",i);
+            break;
+        }}
+            printf("     ] %s (   id %x  ) %s eating from Bowl %d \n", name, animal, what, MyBowl);
+
         }
-        cv_wait(k->kitchen_cv, k->kitchen_lock);
-    }
-   
-    else if (k->current_creature != creature_type) {
-        struct kgroup *g = kmalloc(sizeof(struct kgroup));
-        g->type = creature_type;
-        g->amount = 1;
-        q_addtail(k->group_list, g);
-        cv_wait(k->kitchen_cv, k->kitchen_lock);
-    }
-    k->current_creature = creature_type;
-    k->creature_count++;
-    lock_release(k->kitchen_lock);
-}
 
-void exit_kitchen() {
-    lock_acquire(k->kitchen_lock);
-    k->creature_count--;
-    if (!q_empty(k->group_list) && k->creature_count == 0) {
-        struct kgroup *g = q_remhead(k->group_list);
-        int i;
-        for (i = 0; i < g->amount; i++) {
-            cv_signal(k->kitchen_cv, k->kitchen_lock);
-        }
-        kfree(g);
-    } else if (q_empty(k->group_list) && k->creature_count == 0) {
-        k->current_creature = 2;
-    }
-    lock_release(k->kitchen_lock);
-}
 
-void eat(const int creature_type) {
-    enter_kitchen(creature_type);
-    unsigned int bowl = ((unsigned int)random() % NumBowls);
-    int i = 0;
-    for (i = 0; i < NumBowls; i++) {
-        if (lock_tryacquire(k->bowl_locks[bowl])) break;
-        bowl = (bowl+1) % NumBowls;
-    }
-    if (i == NumBowls) {
-        bowl %= NumBowls;
-        lock_acquire(k->bowl_locks[bowl]);
-    }
-    assert(lock_do_i_hold(k->bowl_locks[bowl]));
-    if (creature_type) {
-        mouse_eat(bowl+1);
-    } else {
-        cat_eat(bowl+1);
-    }
-    lock_release(k->bowl_locks[bowl]);
-    exit_kitchen();
-}
-
-void kitchen_destroy(struct kitchen *k) {
+static void* cat(void *arg)
+{
+    B *Bowl = (B *) arg;
+    int n = NumTimeCatEat;
+    int MyBowl = -1;
     int i;
-    while (!q_empty(k->group_list)) {
-        kfree(q_remhead(k->group_list));
-    }
-   q_destroy(k->group_list);
-    cv_destroy(k->kitchen_cv);
-    lock_destroy(k->kitchen_lock);
-    for (i = 0; i < NumBowls; i++) {
-        lock_destroy(k->bowl_locks[i]);
-    }
-    kfree(k->bowl_locks);
-    kfree(k);
-    k = NULL;
-}
 
-#endif //OPT_A1
-static
-void
-cat_simulation(void * unusedpointer, 
-	       unsigned long catnumber)
+    for (n = NumTimeCatEat; n > 0; n--) {
+
+        pthread_mutex_lock(&Bowl->mutex);
+        pthread_cond_broadcast(&Bowl->CatConditionVariable);
+        Bowl->CatsWaiting++;
+        while (Bowl->FreeBowls <= 0 || Bowl->MiceEating > 0) {
+            pthread_cond_wait(&Bowl->FreeConditionVariable, &Bowl->mutex);
+        }
+        Bowl->CatsWaiting--;
+
+        if(Bowl->FreeBowls > 0)
+        {
+        Bowl->FreeBowls--;
+        if(Bowl->CatsEating < NumCats)
+        {
+        Bowl->CatsEating++;
+
+        for (i = 0; i < NumBowls && Bowl->status[i] != NoneEating; i++) ;
+        MyBowl = i;
+        if(Bowl->status[MyBowl] == NoneEating)
+        {
+        Bowl->status[MyBowl] = CatEating;
+        DumpBowl("cat", pthread_self(), "started", Bowl, MyBowl);
+        pthread_mutex_unlock(&Bowl->mutex);
+
+        sleep(1);
+
+        pthread_mutex_lock(&Bowl->mutex);
+        if(Bowl->FreeBowls < NumBowls)
+        {
+        Bowl->FreeBowls++;
+        if(Bowl->CatsEating > 0)
+        {
+        Bowl->CatsEating--;
+        Bowl->status[MyBowl] = NoneEating;
+
+        pthread_cond_broadcast(&Bowl->FreeConditionVariable);
+        DumpBowl("cat", pthread_self(), "finished", Bowl, MyBowl);
+        pthread_mutex_unlock(&Bowl->mutex);
+
+        sleep(5);
+    	}}}}}}
+
+    return 0;
+}
+static void* mouse(void *arg)
 {
-  int i;
-  unsigned int bowl;
-  (void) unusedpointer;
-  (void) catnumber;
-  for(i=0;i<NumLoops;i++) {
-    cat_sleep();
-#if OPT_A1
-    (void)bowl; //suppress warning
-    eat(0);
-#else
-    bowl = ((unsigned int)random() % NumBowls) + 1;
-    cat_eat(bowl);
-#endif // OPT_A1
+    B *Bowl = (B *) arg;
+    int n = NumTimeMouseEat;
+    struct timespec ts;
+    struct timeval tp;
+    int MyBowl;
+    int i;
 
-  }
-  V(CatMouseWait); 
+    for (n = NumTimeMouseEat; n > 0; n--) {
+
+        pthread_mutex_lock(&Bowl->mutex);
+
+        while (Bowl->FreeBowls <= 0 || Bowl->CatsEating > 0
+               || Bowl->CatsWaiting > 0) {
+            pthread_cond_wait(&Bowl->FreeConditionVariable, &Bowl->mutex);
+        }
+
+        if(Bowl->FreeBowls > 0)
+        {
+        Bowl->FreeBowls--;
+        if(Bowl->CatsEating == 0)
+        {
+		if(Bowl->MiceEating < NumMice)
+        {
+		 Bowl->MiceEating++;
+
+        for (i = 0; i < NumBowls && Bowl->status[i] != NoneEating; i++) ;
+        MyBowl = i;
+        if(Bowl->status[MyBowl] == NoneEating)
+        {
+        Bowl->status[MyBowl] = MouseEating;
+        DumpBowl("mouse", pthread_self(), "started", Bowl, MyBowl);
+        pthread_mutex_unlock(&Bowl->mutex);
+
+		pthread_mutex_lock(&Bowl->mutex);
+        pthread_cond_timedwait(&Bowl->CatConditionVariable, &Bowl->mutex, &ts);
+        pthread_mutex_unlock(&Bowl->mutex);
+        
+		sleep(1);
+        
+		pthread_mutex_lock(&Bowl->mutex);
+        if(Bowl->FreeBowls < NumBowls)
+        {
+        Bowl->FreeBowls++;
+        if(Bowl->CatsEating == 0)
+        {
+        if(Bowl->MiceEating > 0)
+        {
+        Bowl->MiceEating--;
+        Bowl->status[MyBowl]=NoneEating;
+
+        pthread_cond_broadcast(&Bowl->FreeConditionVariable);
+        DumpBowl("mouse", pthread_self(), "finished", Bowl, MyBowl);
+        pthread_mutex_unlock(&Bowl->mutex);
+
+		sleep(3);
+    }}}}}}}}
+
+    return NULL;
 }
-static
-void
-mouse_simulation(void * unusedpointer,
-          unsigned long mousenumber)
+int main()
 {
-  int i;
-  unsigned int bowl;
-  (void) unusedpointer;
-  (void) mousenumber;
-  for(i=0;i<NumLoops;i++) {
-    mouse_sleep();
-#if OPT_A1
-    (void)bowl; // suppress warning
-    eat(1);
-#else
-    bowl = ((unsigned int)random() % NumBowls) + 1;
-    mouse_eat(bowl);
-#endif // OPT_A1
+    int i, err;
+    B _Bowl, *Bowl;
+    pthread_t cats[NumCats];
+    pthread_t Mice[NumMice];
+    Bowl = &_Bowl;
+    memset(Bowl, 0, sizeof(B));
+    Bowl->FreeBowls = NumBowls;
+    pthread_mutex_init(&Bowl->mutex, NULL);
+    pthread_cond_init(&Bowl->FreeConditionVariable, NULL);
+    pthread_cond_init(&Bowl->CatConditionVariable, NULL);
 
-  }
-  V(CatMouseWait); 
-}
-int
-catmouse(int nargs,
-	 char ** args)
-{
-  int index, error;
-  int i;
-  if (nargs != 5) {
-    kprintf("Usage: <command> NUM_BOWLS NUM_CATS NUM_MICE NUM_LOOPS\n");
-    return 1;  // return failure indication
-  }
-  NumBowls = atoi(args[1]);
-  if (NumBowls <= 0) {
-    kprintf("catmouse: invalid number of bowls: %d\n",NumBowls);
-    return 1;
-  }
-  NumCats = atoi(args[2]);
-  if (NumCats < 0) {
-    kprintf("catmouse: invalid number of cats: %d\n",NumCats);
-    return 1;
-  }
-  NumMice = atoi(args[3]);
-  if (NumMice < 0) {
-    kprintf("catmouse: invalid number of mice: %d\n",NumMice);
-    return 1;
-  }
-  NumLoops = atoi(args[4]);
-  if (NumLoops <= 0) {
-    kprintf("catmouse: invalid number of loops: %d\n",NumLoops);
-    return 1;
-  }
-  kprintf("Using %d bowls, %d cats, and %d mice. Looping %d times.\n",
-          NumBowls,NumCats,NumMice,NumLoops);
-  CatMouseWait = sem_create("CatMouseWait",0);
-  if (CatMouseWait == NULL) {
-    panic("catmouse: could not create semaphore\n");
-  }
-  if (initialize_bowls(NumBowls)) {
-    panic("catmouse: error initializing bowls.\n");
-  }
+	for (i = 0; i < NumCats; i++) {
+        err = pthread_create(&cats[i], NULL, cat, Bowl);
+        if (err != 0) {
+            printf(stderr, "%s: %s(): unable to create cat thread %d: %s\n",progname, __func__, i, strerror(err));
+        }
+    }
 
-#if OPT_A1
-  // Create the kitchen
-  k = kitchen_create();
-#endif
-  for (index = 0; index < NumCats; index++) {
-    error = thread_fork("cat_simulation thread",NULL,index,cat_simulation,NULL);
-    if (error) {
-      panic("cat_simulation: thread_fork failed: %s\n", strerror(error));
+	for (i = 0; i < NumMice; i++) {
+        err = pthread_create(&Mice[i], NULL, mouse, Bowl);
+        if (err != 0) {
+            printf(stderr, "%s: %s(): unable to create mouse thread %d: %s\n",progname, __func__, i, strerror(err));
+        }
     }
-  }
-  for (index = 0; index < NumMice; index++) {
-    error = thread_fork("mouse_simulation thread",NULL,index,mouse_simulation,NULL);
-    if (error) {
-      panic("mouse_simulation: thread_fork failed: %s\n",strerror(error));
+    for (i = 0; i < NumCats; i++) {
+        (void) pthread_join(cats[i], NULL);
     }
-  } 
-  for(i=0;i<(NumCats+NumMice);i++) {
-    P(CatMouseWait);
-  }
-#if OPT_A1
-  // Cleanup the kitchen lol
-  kitchen_destroy(k);
-#endif
-  sem_destroy(CatMouseWait);
-  return 0;
+    for (i = 0; i < NumMice; i++) {
+        (void) pthread_join(Mice[i], NULL);
+    }
+
+    pthread_mutex_destroy(&Bowl->mutex);
+    pthread_cond_destroy(&Bowl->FreeConditionVariable);
+    pthread_cond_destroy(&Bowl->CatConditionVariable);
+
+    return 1;
 }
+
