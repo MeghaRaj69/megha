@@ -9,23 +9,23 @@
 #define NumBowls 5
 #define NumCats  3
 #define NumMice  2
-#define CatWait  5      	// max time in seconds a cat sleeps
-#define CatEat   1       	//how long in seconds a cat is eating
-#define NumTimeCatEat 4     // how many times a cat wants to eat 
-#define MouseWait     3     //max time in seconds a mouse sleeps
-#define MouseEat      1     // how long in seconds a mouse is eating
-#define NumTimeMouseEat 4   // how many times a mouse wants to eat
+#define CatWait  5      	
+#define CatEat   1       	
+#define NumTimeCatEat 4     
+#define MouseWait     3     
+#define MouseEat      1     
+#define NumTimeMouseEat 4   
 
 typedef struct Bowl {
     int FreeBowls;
     int CatsEating;
-    int MiceEating;            /* how many Mice are eating at the moment */
-    int CatsWaiting;           /* how many cats are waiting for Bowl */
+    int MiceEating;            
+    int CatsWaiting;           
     enum {NoneEating,CatEating,MouseEating
-    } status[NumBowls];         /* status of each Bowl */
-    pthread_mutex_t mutex;      /* mutex for accessing Bowl */
-    pthread_cond_t FreeConditionVariable;     /* used to wait for a free Bowl */
-    pthread_cond_t CatConditionVariable;      /* used to wait for coming cats */
+    } status[NumBowls];         
+    pthread_mutex_t mutex;      
+    pthread_cond_t FreeConditionVariable;    
+    pthread_cond_t CatConditionVariable;     
 } B;
 
 static const char *progname = "animals";
